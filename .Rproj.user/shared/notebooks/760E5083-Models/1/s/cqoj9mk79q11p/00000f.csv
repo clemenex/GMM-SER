@@ -1,0 +1,58 @@
+"0","pitch_sd_model <- brm("
+"0","  pitch_sd ~ 1 + (1 | participant_id),"
+"0","  data = df,"
+"0","  family = gaussian(),"
+"0","  chains = 4,"
+"0","  iter = 4000,"
+"0","  warmup = 1000,"
+"0","  cores = parallel::detectCores(),"
+"0","  control = list(adapt_delta = 0.95),"
+"0","  seed = 123"
+"0",")"
+"2","G3;Compiling Stan program...
+g"
+"2","trying URL 'https://cloud.r-project.org/bin/windows/Rtools/rtools44/files/rtools44-6459-6401.exe'
+"
+"2","Content type 'application/x-msdownload' length 451591776 bytes (430.7 MB)
+"
+"2","downloaded 430.7 MB
+
+"
+"2","G3;Trying to compile a simple C file
+g"
+"1","Running ""C:/R-4.5.0/bin/x64/Rcmd.exe"" SHLIB foo.c
+"
+"1","-"
+"1","\"
+"1","using C compiler: 'gcc.exe (MinGW.org GCC-6.3.0-1) 6.3.0'
+|"
+"1","gcc  -I""C:/R-4.5.0/include"" -DNDEBUG     -I""c:/rtools45/x86_64-w64-mingw32.static.posix/include""      -O2 -Wall -std=gnu2x  -mfpmath=sse -msse2 -mstackrealign   -c foo.c -o foo.o
+/"
+"1","gcc.exe: error: unrecognized command line option '-std=gnu2x'; did you mean '-std=gnu1x'?
+-make: *** [C:/R-4.5.0/etc/x64/Makeconf:289: foo.o] Error 1
+"
+"1","\"
+"1","| "
+"2","G3;WARNING: Rtools is required to build R packages, but no version of Rtools compatible with R 4.5.0 was found. (Only the following incompatible version(s) of Rtools were found: 4.4.6459)
+
+Please download and install Rtools 4.5 from https://cran.r-project.org/bin/windows/Rtools/.
+g"
+"1","make cmd is
+  make -f ""C:/R-45~1.0/etc/x64/Makeconf"" -f ""C:/R-45~1.0/share/make/winshlib.mk"" CXX='$(CXX17) $(CXX17STD)' CXXFLAGS='$(CXX17FLAGS)' CXXPICFLAGS='$(CXX17PICFLAGS)' SHLIB_LDFLAGS='$(SHLIB_CXX17LDFLAGS)' SHLIB_LD='$(SHLIB_CXX17LD)' SHLIB=""file142035156c1f.dll"" WIN=64 TCLBIN= OBJECTS=""file142035156c1f.o""
+
+make would use
+g++  -std=gnu++17 -I""C:/R-45~1.0/include"" -DNDEBUG   -I""C:/R-4.5.0/library/Rcpp/include/""  -I""C:/R-4.5.0/library/RcppEigen/include/""  -I""C:/R-4.5.0/library/RcppEigen/include/unsupported""  -I""C:/R-4.5.0/library/BH/include"" -I""C:/R-4.5.0/library/StanHeaders/include/src/""  -I""C:/R-4.5.0/library/StanHeaders/include/""  -I""C:/R-4.5.0/library/RcppParallel/include/"" -DRCPP_PARALLEL_USE_TBB=1 -I""C:/R-4.5.0/library/rstan/include"" -DEIGEN_NO_DEBUG  -DBOOST_DISABLE_ASSERTS  -DBOOST_PENDING_INTEGER_LOG2_HPP  -DSTAN_THREADS  -DUSE_STANC3 -DSTRICT_R_HEADERS  -DBOOST_PHOENIX_NO_VARIADIC_EXPRESSION  -D_HAS_AUTO_PTR_ETC=0  -include ""C:/R-4.5.0/library/StanHeaders/include/stan/math/prim/fun/Eigen.hpp""  -std=c++1y    -I""c:/rtools45/x86_64-w64-mingw32.static.posix/include""      -O2 -Wall  -mfpmath=sse -msse2 -mstackrealign    -c file142035156c1f.cpp -o file142035156c1f.o
+"
+"1","if test ""zfile142035156c1f.o"" != ""z""; then \
+  if test -e ""file142035156c1f-win.def""; then \
+    echo g++  -shared -s -static-libgcc -o file142035156c1f.dll file142035156c1f-win.def file142035156c1f.o  ""C:/R-4.5.0/library/rstan/lib/x64/libStanServices.a"" -L""C:/R-4.5.0/library/StanHeaders/libs/x64"" -lStanHeaders -L""C:/R-4.5.0/library/RcppParallel/lib/x64"" -ltbb -L""C:/R-4.5.0/library/RcppParallel/libs/x64"" -lRcppParallel -LC:/R-4.5.0/library/RcppParallel/lib/x64 -ltbb -ltbbmalloc -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib/x64"" -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib""  -L""C:/R-45~1.0/bin/x64"" -lR ; \
+    g++  -shared -s -static-libgcc -o file142035156c1f.dll file142035156c1f-win.def file142035156c1f.o  ""C:/R-4.5.0/library/rstan/lib/x64/libStanServices.a"" -L""C:/R-4.5.0/library/StanHeaders/libs/x64"" -lStanHeaders -L""C:/R-4.5.0/library/RcppParallel/lib/x64"" -ltbb -L""C:/R-4.5.0/library/RcppParallel/libs/x64"" -lRcppParallel -LC:/R-4.5.0/library/RcppParallel/lib/x64 -ltbb -ltbbmalloc -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib/x64"" -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib""  -L""C:/R-45~1.0/bin/x64"" -lR ; \
+  else \
+    echo EXPORTS > tmp.def; \
+    nm file142035156c1f.o | sed -n 's/^.* [BCDRT] / /p' | sed -e '/[.]refptr[.]/d' -e '/[.]weak[.]/d' | sed 's/[^ ][^ ]*/""&""/g'  >> tmp.def; \
+    echo g++  -shared -s -static-libgcc -o file142035156c1f.dll tmp.def file142035156c1f.o  ""C:/R-4.5.0/library/rstan/lib/x64/libStanServices.a"" -L""C:/R-4.5.0/library/StanHeaders/libs/x64"" -lStanHeaders -L""C:/R-4.5.0/library/RcppParallel/lib/x64"" -ltbb -L""C:/R-4.5.0/library/RcppParallel/libs/x64"" -lRcppParallel -LC:/R-4.5.0/library/RcppParallel/lib/x64 -ltbb -ltbbmalloc -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib/x64"" -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib""  -L""C:/R-45~1.0/bin/x64"" -lR ; \
+    g++  -shared -s -static-libgcc -o file142035156c1f.dll tmp.def file142035156c1f.o  ""C:/R-4.5.0/library/rstan/lib/x64/libStanServices.a"" -L""C:/R-4.5.0/library/StanHeaders/libs/x64"" -lStanHeaders -L""C:/R-4.5.0/library/RcppParallel/lib/x64"" -ltbb -L""C:/R-4.5.0/library/RcppParallel/libs/x64"" -lRcppParallel -LC:/R-4.5.0/library/RcppParallel/lib/x64 -ltbb -ltbbmalloc -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib/x64"" -L""c:/rtools45/x86_64-w64-mingw32.static.posix/lib""  -L""C:/R-45~1.0/bin/x64"" -lR ; \
+    rm -f tmp.def; \
+  fi \
+fi
+"

@@ -1,0 +1,15 @@
+"0","pitch_sd_model <- brm("
+"0","  pitch_sd ~ 1 + (1 | participant_id),"
+"0","  data = df,"
+"0","  family = gaussian(),"
+"0","  chains = 4,"
+"0","  iter = 4000,"
+"0","  warmup = 1000,"
+"0","  cores = parallel::detectCores(),"
+"0","  control = list(adapt_delta = 0.95),"
+"0","  seed = 123"
+"0",")"
+"2","G3;Compiling Stan program...
+g"
+"2","G3;Start sampling
+g"

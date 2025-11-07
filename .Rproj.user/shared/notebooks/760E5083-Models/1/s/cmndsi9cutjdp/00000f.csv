@@ -1,0 +1,24 @@
+"0","energy_sd_model <- brm(
+  energy_sd ~ 1 + (1 | participant_id),
+  data = df,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  control = list(adapt_delta = 0.95),
+  seed = 123
+)
+"
+"2","G3;Compiling Stan program...
+g"
+"2","G3;Start sampling
+g"
+"2","Warning :Bulk Effective Samples Size (ESS) is too low, indicating posterior means and medians may be unreliable.
+Running the chains for more iterations may help. See
+https://mc-stan.org/misc/warnings.html#bulk-ess
+"
+"2","Warning :Tail Effective Samples Size (ESS) is too low, indicating posterior variances and tail quantiles may be unreliable.
+Running the chains for more iterations may help. See
+https://mc-stan.org/misc/warnings.html#tail-ess
+"

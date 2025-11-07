@@ -1,0 +1,5 @@
+"0","library(brms)"
+"0",""
+"0","df_mix <- df %>%"
+"0","  select(participant_id, pitch_sd) %>%"
+"0","  filter(!is.na(pitch_sd))"

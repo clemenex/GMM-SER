@@ -1,0 +1,25 @@
+"0","summary(mix_model_2)"
+"1"," Family: mixture(gaussian, gaussian) 
+  Links: "
+"1","mu1 = identity; sigma1 = identity; mu2 = identity; sigma2 = identity; theta1 = identity; theta2 = identity 
+Formula: pitch_sd ~ 1 
+   Data: df_mix (Number of observations: 2997) 
+  Draws: 4 chains, each with iter = 4000; warmup = 1000; thin = 1;
+         total post-warmup draws = 12000
+
+Regression Coefficients:
+              Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+mu1_Intercept   542.58     65.31   440.50   683.20 1.00     1389     2220
+mu2_Intercept   866.18      3.64   859.39   873.53 1.00     2173     5079
+
+Further Distributional Parameters:
+       Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma1   136.42     28.75    86.84   192.38 1.00     1437     2127
+sigma2   110.31      2.64   105.19   115.45 1.00     1848     2723
+theta1     0.06      0.02     0.03     0.12 1.00     1379     2425
+theta2     0.94      0.02     0.88     0.97 1.00     1379     2425
+
+Draws were sampled using sampling(NUTS). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).
+"

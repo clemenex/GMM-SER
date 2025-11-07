@@ -1,0 +1,7 @@
+.venv
+outputs/
+data/
+models/
+__pycache__
+/Rproj.user
+.vscode

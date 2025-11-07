@@ -1,0 +1,25 @@
+"0","mix2 <- mixture(gaussian, gaussian)"
+"2","G3;Setting order = 'mu' for mixtures of the same family.
+g"
+"0","mix_model_2 <- brm("
+"0","  bf(pitch_sd ~ 1),"
+"0","  data = df_mix,"
+"0","  family = mix2,"
+"0","  chains = 4,"
+"0","  iter = 4000,"
+"0","  warmup = 1000,"
+"0","  cores = parallel::detectCores(),"
+"0","  seed = 123,"
+"0","  control = list(adapt_delta = 0.99),"
+"0","  file = ""models/mix_model_2class"""
+"0",")"
+"2","G3;Compiling Stan program...
+g"
+"2","G3;Start sampling
+g"
+"2","Warning :There were 1 transitions after warmup that exceeded the maximum treedepth. Increase max_treedepth above 10. See
+https://mc-stan.org/misc/warnings.html#maximum-treedepth-exceeded
+"
+"2","Warning :Examine the pairs() plot to diagnose sampling problems
+
+"

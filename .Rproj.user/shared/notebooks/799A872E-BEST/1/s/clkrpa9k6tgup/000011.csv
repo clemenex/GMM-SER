@@ -1,0 +1,8 @@
+"0","ranef(pitch_sd_model)$participant_id %>%"
+"0","  as.data.frame() %>%"
+"0","  arrange(desc(Estimate.Intercept)) %>%"
+"0","  head(10) %>%"
+"0","  knitr::kable("
+"0","    digits = 3,"
+"0","    caption = ""Top 10 Participants by Pitch Variation (Random Effects)"""
+"0","  )"

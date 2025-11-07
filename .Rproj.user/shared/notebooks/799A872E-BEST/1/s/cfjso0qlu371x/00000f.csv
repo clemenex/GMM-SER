@@ -1,0 +1,8 @@
+"0","loo_2 <- loo(mix_model_2)"
+"0","loo_3 <- loo(mix_model_3)"
+"0",""
+"0","loo_compare(loo_2, loo_3)"
+"1","            elpd_diff se_diff
+mix_model_3  0.0       0.0   
+mix_model_2 -4.0       2.3   
+"
