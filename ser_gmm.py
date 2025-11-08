@@ -19,8 +19,8 @@ gmm = GaussianMixture(
     n_components=4,
     covariance_type="diag",
     random_state=42,
-    n_init=10,
-    reg_covar=1e-6
+    n_init=50,
+    reg_covar=1e-5
 )
 gmm.fit(Xz)
 
@@ -54,8 +54,8 @@ scaler_path = "models/ser60_scaler.joblib"
 gmm_path    = f"models/ser60_gmm{gmm.n_components}_{gmm.covariance_type}.joblib"
 meta_path   = "models/ser60_meta.joblib"
 
-dump(scaler, "models/ser60_scaler.joblib")
-dump(gmm, "models/ser60_gmm2.joblib")
+dump(scaler, scaler_path)
+dump(gmm, gmm_path)
 
 meta = {
     "features": FEATURES,
@@ -67,14 +67,14 @@ meta = {
     "component_means_orig": means_orig.tolist(),
     "weights": gmm.weights_.tolist(),
     "thresholds": {"symmetric": 0.90, "low_expr": 0.90, "high_expr": 0.95},
-    "model_config": {                      # <-- make this dynamic, not hard-coded
+    "model_config": {
         "n_components": gmm.n_components,
         "covariance_type": gmm.covariance_type,
         "random_state": 42,
         "n_init": 10,
         "reg_covar": 1e-6
     },
-    "artifacts": {                         # helpful provenance
+    "artifacts": {
         "scaler": scaler_path,
         "gmm": gmm_path,
         "meta": meta_path

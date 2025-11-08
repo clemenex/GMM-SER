@@ -9,7 +9,7 @@ Xz = StandardScaler().fit_transform(X)
 labels = []
 seeds = [0,1,2,3,4]
 for rs in seeds:
-    gmm = GaussianMixture(n_components=2, covariance_type="full", random_state=rs, n_init=5, reg_covar=1e-6).fit(Xz)
+    gmm = GaussianMixture(n_components=4, covariance_type="diag", random_state=rs, n_init=5, reg_covar=1e-6).fit(Xz)
     labels.append(gmm.predict(Xz))
 
 for i in range(len(seeds)):
