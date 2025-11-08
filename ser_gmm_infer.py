@@ -1,18 +1,24 @@
 # ser_gmm_infer.py
 import pandas as pd
 import numpy as np
-from joblib import load
+from joblib import load, dump
+import os
 
 # ---- Load artifacts ----
 scaler = load("models/ser60_scaler.joblib")
 gmm = load("models/ser60_gmm2.joblib")
 meta = load("models/ser60_meta.joblib")
 FEATURES = meta["features"]
-low_expr_comp = meta["low_expr_comp"]
-high_expr_comp = meta["high_expr_comp"]
+low_list  = [int(i) for i in meta.get("low_expr_comps",  [meta.get("low_expr_comp", 0)])]
+high_list = [int(i) for i in meta.get("high_expr_comps", [meta.get("high_expr_comp", 1)])]
 
 # ---- Tunable thresholds ----
-THRESH_CONFIDENT = 0.90
+THRESH = meta.get("thresholds", {})
+THRESH_CONFIDENT = float(os.getenv("SER_THRESH", THRESH.get("symmetric", 0.90)))
+T_LOW  = float(os.getenv("SER_TLOW",  THRESH.get("low_expr", THRESH_CONFIDENT)))
+T_HIGH = float(os.getenv("SER_THIGH", THRESH.get("high_expr", THRESH_CONFIDENT)))
+
+print(f"[SER] thresholds -> low={T_LOW:.2f}, high={T_HIGH:.2f} (source: meta/env)")
 LOW_PITCH_SD_ABS = None
 HIGH_PITCH_SD_ABS = None
 
@@ -22,8 +28,8 @@ def map_to_descriptor(row, probs):
     row: pandas Series with pitch_sd, energy_sd (if available)
     probs: array([P(comp0), P(comp1)]) aligned with gmm component order
     """
-    p_low = probs[low_expr_comp]
-    p_high = probs[high_expr_comp]
+    p_low  = float(probs[low_list].sum())
+    p_high = float(probs[high_list].sum())
     pitch_sd = row.get("pitch_sd", np.nan)
     energy_sd = row.get("energy_sd", np.nan)
 
@@ -33,18 +39,15 @@ def map_to_descriptor(row, probs):
     confidence = "low"
 
     # Confidence logic
-    if p_low >= THRESH_CONFIDENT:
-        label = "flat_prosody"
-        confidence = "high"
-        descriptor = "Speech shows monotone/flat prosody with diminished emotional expressiveness."
-    elif p_high >= THRESH_CONFIDENT:
-        label = "expressive_prosody"
-        confidence = "high"
-        descriptor = "Speech shows varying/expressive intonation."
+    if p_low  >= T_LOW:
+        label, confidence, descriptor = "flat_prosody", "high", "Speech shows monotone/flat prosody with diminished emotional expressiveness."
+    elif p_high >= T_HIGH:
+        label, confidence, descriptor = "expressive_prosody", "high", "Speech shows varying/expressive intonation."
+    else:
+        label, confidence, descriptor = "prosody_ambiguous", "low", "Prosodic features are inconclusive; consider additional signs/symptoms."
 
-    # Optional face-validity nudges from raw stats
     if label == "flat_prosody":
-        # If energy_sd is available and low, strengthen wording
+
         if not np.isnan(energy_sd) and energy_sd < np.nanpercentile(df_ref["energy_sd"], 25):
             descriptor += " Low energy variation is also observed."
     elif label == "expressive_prosody":
@@ -67,10 +70,8 @@ def infer_ser_descriptors(df_windows):
     """
     X = df_windows[FEATURES].to_numpy()
     Xz = scaler.transform(X)
-    # Posterior probs over components
     post = gmm.predict_proba(Xz)
 
-    # Make a small reference for percentiles (only for optional nudges)
     global df_ref
     df_ref = df_windows.copy()
 

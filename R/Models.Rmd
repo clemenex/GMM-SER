@@ -1,0 +1,111 @@
+---
+title: "Bayesian Modeling of Prosodic Features"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# ✅ **Setup**
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(bayesplot)
+library(here)
+library(knitr)
+
+# Load the data
+df <- read_csv("data/daic_prosodic_summary_60s.csv") %>%
+  mutate(
+    participant_id = factor(participant_id),
+    window = factor(window)
+  )
+```
+
+---
+
+# 📌 **Bayesian Model: Pitch Variation**
+
+This model assesses variability in pitch (`pitch_sd`) across participants.
+
+```{r pitch_sd_model, cache=TRUE}
+pitch_sd_model <- brm(
+  pitch_sd ~ 1 + (1 | participant_id),
+  data = df,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  control = list(adapt_delta = 0.95),
+  seed = 123
+)
+```
+
+---
+
+# 📌 **Model Diagnostics**
+
+Visual checks for convergence and stability.
+
+```{r diagnostics}
+plot(pitch_sd_model)
+pp_check(pitch_sd_model)
+```
+
+---
+
+# 📌 **Model Summary**
+
+Model parameters and credible intervals.
+
+```{r summary}
+summary(pitch_sd_model)
+```
+
+---
+
+# 📌 **Top Participants by Pitch Variation**
+
+List participants with highest estimated pitch variability.
+
+```{r random_effects_table}
+ranef(pitch_sd_model)$participant_id %>%
+  as.data.frame() %>%
+  arrange(desc(Estimate.Intercept)) %>%
+  head(10) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Top 10 Participants by Pitch Variation (Random Effects)"
+  )
+```
+
+---
+
+# 📌 **Optional: Bayesian Model for Energy Variation**
+
+Repeat similar modeling for energy variability if desired.
+
+```{r energy_sd_model, eval=FALSE}
+energy_sd_model <- brm(
+  energy_sd ~ 1 + (1 | participant_id),
+  data = df,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  control = list(adapt_delta = 0.95),
+  seed = 123
+)
+```
+
+---
+
+# 📌 **Interpretation for Clinicians**
+
+- **Higher pitch or energy variation** may suggest emotional instability or anxiety.
+- **Lower pitch or energy variation** could suggest a flat affect or depressive mood.
+
+These insights can guide clinical interpretations within your RAG system.

@@ -1,40 +1,0 @@
-"0","pitch_sd_model <- brm("
-"0","  pitch_sd ~ 1 + (1 | participant_id),"
-"0","  data = df,"
-"0","  family = gaussian(),"
-"0","  chains = 4,"
-"0","  iter = 4000,"
-"0","  warmup = 1000,"
-"0","  cores = parallel::detectCores(),"
-"0","  control = list(adapt_delta = 0.95),"
-"0","  seed = 123"
-"0",")"
-"2","G3;Compiling Stan program...
-g"
-"2","G3;Trying to compile a simple C file
-g"
-"1","Running ""C:/R-4.5.0/bin/x64/Rcmd.exe"" SHLIB foo.c
-"
-"2","G1;H1;Errorh in system(paste(MAKE, p1(paste(""-f"", shQuote(makefiles))), ""compilers""),  : 
-  'make' not found
-Calls: <Anonymous> -> .shlib_internal -> system
--Execution halted
-\|g"
-"2","G1; g"
-"2","G3;WARNING: Rtools is required to build R packages, but no version of Rtools compatible with R 4.5.0 was found. (Only the following incompatible version(s) of Rtools were found: 4.4.6459)
-
-Please download and install Rtools 4.5 from https://cran.r-project.org/bin/windows/Rtools/.
-g"
-"2","G2;G1;make cmd is
-  make -f ""C:/R-45~1.0/etc/x64/Makeconf"" -f ""C:/R-45~1.0/share/make/winshlib.mk"" CXX='$(CXX17) $(CXX17STD)' CXXFLAGS='$(CXX17FLAGS)' CXXPICFLAGS='$(CXX17PICFLAGS)' SHLIB_LDFLAGS='$(SHLIB_CXX17LDFLAGS)' SHLIB_LD='$(SHLIB_CXX17LD)' SHLIB=""file741419532a63.dll"" WIN=64 TCLBIN= OBJECTS=""file741419532a63.o""
-
-make would use
-H2;Warning messageh:
-In system(paste(cmd, ""-n"")) : 'make' not found
-gg"
-"2","G1;H1;Errorh in compileCode(f, code, language = language, verbose = verbose) : 
-  Error in system(paste(MAKE, p1(paste(""-f"", shQuote(makefiles))), ""compilers""),  : 
-  'make' not found
-Calls: <Anonymous> -> .shlib_internal -> system
-Execution halted
-g"
