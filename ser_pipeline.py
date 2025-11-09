@@ -282,6 +282,30 @@ class SERModel:
             "Retrieve DSM-5-TR sections where diminished emotional expression, flat affect, or "
             "prosody-related observations are clinically relevant for diagnosis or differential diagnosis."
         )
+    
+    @staticmethod
+    def _fmt_num(x, digits=2):
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return "NA"
+        if isinstance(x, (float, np.floating)):
+            return f"{x:.{digits}f}"
+        return str(x)
+
+    @staticmethod
+    def _build_retrieval_query_nl(row: pd.Series) -> str:
+        return (
+            f"Observed prosody (SER): {row['descriptor']}\n"
+            f"Confidence: {row['confidence']} | "
+            f"low_expr={row['gmm_posteriors']['low_expr']:.2f}, "
+            f"high_expr={row['gmm_posteriors']['high_expr']:.2f}\n"
+            f"Window: {int(round(row['start_s']))}–{int(round(row['end_s']))}s | "
+            f"pitch_sd={SERModel._fmt_num(row['pitch_sd'])} ({row['feature_schema']}), "
+            f"energy_sd={SERModel._fmt_num(row['energy_sd'])}\n\n"
+            "Goal: Retrieve DSM-5-TR sections where prosody/affect changes are relevant to diagnosis or differential diagnosis.\n"
+            "Include: diagnostic criteria text, specifiers, clinical features, differentials, and assessment guidance.\n"
+            "Focus terms: diminished emotional expression, flat affect, blunted affect, prosody, monotone speech, expressive intonation."
+        )
+
 
     # ----- public API you’ll call -----
 
@@ -373,26 +397,31 @@ class SERModel:
         df["ser_label"]      = [m["ser_label"]      for m in mapped]
         df["confidence"]     = [m["confidence"]     for m in mapped]
         df["descriptor"]     = [m["descriptor"]     for m in mapped]
+        df["retrieval_query"] = df.apply(self._build_retrieval_query_nl, axis=1)
         df["rag_context"]    = df.apply(self._build_rag_text, axis=1)
 
+
         # 4) RAG docs
-        docs = [{
-            "text": r["rag_context"],
-            "metadata": {
-                "window_id": int(r["window_id"]),
-                "start_s": float(r["start_s"]),
-                "end_s": float(r["end_s"]),
-                "ser_label": r["ser_label"],
-                "confidence": r["confidence"],
-                "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
-                "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
-                "post_low": float(r["gmm_posteriors"]["low_expr"]),
-                "post_high": float(r["gmm_posteriors"]["high_expr"]),
-                "feature_schema": r["feature_schema"],
-            }
-        } for _, r in df.iterrows()]
+        docs = []
+        for _, r in df.iterrows():
+            docs.append({
+                "text": r["retrieval_query"],
+                "gen_text": r["rag_context"],
+                "metadata": {
+                    "window_id": int(r["window_id"]),
+                    "start_s": float(r["start_s"]),
+                    "end_s": float(r["end_s"]),
+                    "ser_label": r["ser_label"],
+                    "confidence": r["confidence"],
+                    "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
+                    "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
+                    "post_low": float(r["gmm_posteriors"]["low_expr"]),
+                    "post_high": float(r["gmm_posteriors"]["high_expr"]),
+                    "feature_schema": r["feature_schema"],
+                }
+            })
 
-        base_cols = ["window_id","start_s","end_s","pitch_sd","energy_sd","ser_label","confidence","feature_schema"]
-        df = df[base_cols + ["gmm_posteriors","descriptor","rag_context"]]
+        base_cols = ["window_id","start_s","end_s","pitch_sd","energy_sd",
+                    "ser_label","confidence","feature_schema"]
+        df = df[base_cols + ["gmm_posteriors","descriptor","retrieval_query","rag_context"]]
         return df, docs
-
