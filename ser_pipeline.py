@@ -128,8 +128,19 @@ class SERModel:
         meta = load(meta_path)
 
         features = meta.get("features", ["pitch_sd", "energy_sd"])
-        low_list  = [int(i) for i in meta.get("low_expr_comps",  [meta.get("low_expr_comp", 0)])]
-        high_list = [int(i) for i in meta.get("high_expr_comps", [meta.get("high_expr_comp", 1)])]
+        raw_low  = meta.get("low_expr_comps")
+        raw_high = meta.get("high_expr_comps")
+
+        if not raw_low:
+            raw_low = [meta.get("low_expr_comp", 0)]
+        if not raw_high:
+            raw_high = [meta.get("high_expr_comp", 1)]
+
+        low_list  = [int(i) for i in raw_low]
+        high_list = [int(i) for i in raw_high]
+
+        if (len(low_list) + len(high_list)) == 0:
+            raise ValueError("No components assigned to low/high groups in meta.")
 
         thr = meta.get("thresholds", {})
         t_default = float(os.getenv("SER_THRESH", thr.get("symmetric", 0.90)))
@@ -306,6 +317,12 @@ class SERModel:
         X = df[self.art.features].to_numpy()
         Xz = self.art.scaler.transform(X)
         post = self.art.gmm.predict_proba(Xz)
+
+        print("features:", self.art.features)
+        print("low_list:", self.art.low_list, "high_list:", self.art.high_list)
+        print("n_components:", self.art.gmm.n_components)
+        print("post[0][:5]:", post[0][:min(5, post.shape[1])], "sum:", post[0].sum())
+        
         p_low  = post[:, self.art.low_list].sum(axis=1)
         p_high = post[:, self.art.high_list].sum(axis=1)
 
