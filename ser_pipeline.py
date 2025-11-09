@@ -26,6 +26,8 @@ import pandas as pd
 import librosa
 from joblib import load
 
+from dataclasses import dataclass, field
+
 
 # ---------- small helpers ----------
 
@@ -47,6 +49,53 @@ def _to_semitones(f0_hz: np.ndarray) -> np.ndarray:
         return np.full_like(f0, np.nan, dtype=float)
     return 12.0 * np.log2(f0 / med)
 
+#---------- LEGACY PIPELINE --------------------
+def _pitch_energy_legacy(window_y: np.ndarray, sr: int) -> tuple[float, float]:
+    """
+    Replicates the original thesis code:
+    - pitch from librosa.piptrack
+    - keep bins where magnitude > global median magnitude
+    - pitch_sd in Hz (std), energy_sd from RMS over all frames
+    """
+    # piptrack returns [freq_bins x frames]
+    pitches, mags = librosa.piptrack(y=window_y, sr=sr)
+    mask = mags > np.median(mags)                 # global median threshold, as in the old code
+    pitch_vals = pitches[mask]                    # 1D array of Hz values
+
+    if pitch_vals.size > 0:
+        pitch_sd_hz = float(np.std(pitch_vals))
+    else:
+        pitch_sd_hz = float("nan")
+
+    rms = librosa.feature.rms(y=window_y)[0]      # no silence filtering in the old code
+    energy_sd = float(np.std(rms)) if rms.size > 0 else float("nan")
+    return pitch_sd_hz, energy_sd
+
+
+def _features_from_array_legacy(y: np.ndarray, sr: int, win_sec: float, hop_sec: float) -> pd.DataFrame:
+    """
+    Segment audio into non-overlapping windows (like the old pipeline) and
+    compute pitch_sd (Hz) and energy_sd per window with the legacy method.
+    """
+    # old code used non-overlapping contiguous windows, skipping very short tails
+    win_len = int(sr * win_sec)
+    starts = list(range(0, len(y), win_len))
+    rows = []
+    for i, s in enumerate(starts):
+        e = min(s + win_len, len(y))
+        if (e - s) < 0.5 * win_len:               # same 50% minimum as your old code
+            continue
+        w = y[s:e]
+        pitch_sd, energy_sd = _pitch_energy_legacy(w, sr)
+        rows.append({
+            "window_id": i,
+            "start_s": round(s / sr, 3),
+            "end_s": round(e / sr, 3),
+            "pitch_sd": pitch_sd,                 # Hz
+            "energy_sd": energy_sd               # RMS SD
+        })
+    return pd.DataFrame(rows)
+
 
 @dataclass
 class SERArtifacts:
@@ -58,6 +107,8 @@ class SERArtifacts:
     high_list: List[int]
     T_LOW: float
     T_HIGH: float
+    feature_schema: str = "legacy_piptrack_hz_sd__rms_sd"
+    feature_mode: str = field(default="legacy")
 
 
 # ---------- the main model ----------
@@ -85,11 +136,29 @@ class SERModel:
         T_LOW  = float(os.getenv("SER_TLOW",  thr.get("low_expr", t_default)))
         T_HIGH = float(os.getenv("SER_THIGH", thr.get("high_expr", t_default)))
 
+        schema = meta.get("feature_schema", "legacy_piptrack_hz_sd__rms_sd")
+        # Allow override via env: SER_FEATURE_MODE = legacy|improved
+        mode_env = os.getenv("SER_FEATURE_MODE", "").strip().lower()
+        feature_mode = (
+            mode_env if mode_env in {"legacy","improved"} else
+            ("legacy" if schema.startswith("legacy_piptrack") else "improved")
+        )
+
         art = SERArtifacts(
             scaler=scaler, gmm=gmm, meta=meta, features=features,
-            low_list=low_list, high_list=high_list, T_LOW=T_LOW, T_HIGH=T_HIGH
+            low_list=low_list, high_list=high_list, T_LOW=T_LOW, T_HIGH=T_HIGH,
+            feature_schema=schema, feature_mode=feature_mode
         )
-        return cls(art)
+        model = cls(art)
+        model._assert_schema_compat()
+        return model
+    
+    def _assert_schema_compat(self):
+        schema = self.art.feature_schema or ""
+        if self.art.feature_mode == "legacy" and not schema.startswith("legacy_piptrack"):
+            raise ValueError(f"Extractor=legacy but meta.feature_schema={schema}. Retrain or set SER_FEATURE_MODE=improved.")
+        if self.art.feature_mode == "improved" and schema.startswith("legacy_piptrack"):
+            raise ValueError(f"Extractor=improved but meta.feature_schema={schema}. Retrain or set SER_FEATURE_MODE=legacy.")
 
     # ----- audio IO & windowing -----
 
@@ -211,15 +280,27 @@ class SERModel:
         y, sr = self.load_audio_mono(audio_path, sr=sr_target)
         return self.process_array(y, sr, win_sec=win_sec, hop_sec=hop_sec, fmin=fmin, fmax=fmax)
 
-    def process_array(self, y: np.ndarray, sr: int, win_sec: float = 60.0, hop_sec: float = 60.0,
-                      fmin: float = 65.0, fmax: float = 400.0
+    def process_array(self, y: np.ndarray, sr: int,
+                      win_sec: float = 60.0, hop_sec: float = 60.0,
+                      fmin: float = 65.0, fmax: float = 400.0,
+                      feature_mode: Optional[str] = None
                       ) -> Tuple[pd.DataFrame, List[Dict]]:
         """
         Full pipeline on in-memory audio: features → GMM → descriptors → RAG docs.
-        Returns (df, docs) where docs = [{"text": rag_context, "metadata": {...}}, ...]
+        Set feature_mode to override ('legacy'/'improved'); defaults to artifacts' mode.
         """
+        mode = (feature_mode or self.art.feature_mode).lower()
+        if mode not in {"legacy","improved"}:
+            raise ValueError(f"Unknown feature_mode={mode}")
+
         # 1) features per window
-        df = self._features_from_array(y, sr, win_sec, hop_sec, fmin, fmax)
+        if mode == "legacy":
+            # Legacy uses non-overlapping windows; we intentionally ignore hop_sec here.
+            df = _features_from_array_legacy(y, sr, win_sec, hop_sec)
+            df["feature_schema"] = "legacy_piptrack_hz_sd__rms_sd"
+        else:
+            df = self._features_from_array(y, sr, win_sec, hop_sec, fmin, fmax)
+            df["feature_schema"] = "pyin_semitone_sd__rms_sd_excl20p"  # or yin_* if that's your extractor
 
         # 2) align features & get posteriors
         X = df[self.art.features].to_numpy()
@@ -228,7 +309,7 @@ class SERModel:
         p_low  = post[:, self.art.low_list].sum(axis=1)
         p_high = post[:, self.art.high_list].sum(axis=1)
 
-        # 3) mapping with dataset-level energy cues
+        # 3) dataset-level energy quantiles for text mapping
         q25_energy = _percentile_safe(df["energy_sd"].to_numpy(), 25.0)
         q75_energy = _percentile_safe(df["energy_sd"].to_numpy(), 75.0)
 
@@ -242,30 +323,29 @@ class SERModel:
             mapped.append(info)
 
         df["gmm_posteriors"] = [m["gmm_posteriors"] for m in mapped]
-        df["ser_label"] = [m["ser_label"] for m in mapped]
-        df["confidence"] = [m["confidence"] for m in mapped]
-        df["descriptor"] = [m["descriptor"] for m in mapped]
+        df["ser_label"]      = [m["ser_label"]      for m in mapped]
+        df["confidence"]     = [m["confidence"]     for m in mapped]
+        df["descriptor"]     = [m["descriptor"]     for m in mapped]
+        df["rag_context"]    = df.apply(self._build_rag_text, axis=1)
 
         # 4) RAG docs
-        df["rag_context"] = df.apply(self._build_rag_text, axis=1)
-        docs = []
-        for _, r in df.iterrows():
-            docs.append({
-                "text": r["rag_context"],
-                "metadata": {
-                    "window_id": int(r["window_id"]),
-                    "start_s": float(r["start_s"]),
-                    "end_s": float(r["end_s"]),
-                    "ser_label": r["ser_label"],
-                    "confidence": r["confidence"],
-                    "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
-                    "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
-                    "post_low": float(r["gmm_posteriors"]["low_expr"]),
-                    "post_high": float(r["gmm_posteriors"]["high_expr"]),
-                }
-            })
+        docs = [{
+            "text": r["rag_context"],
+            "metadata": {
+                "window_id": int(r["window_id"]),
+                "start_s": float(r["start_s"]),
+                "end_s": float(r["end_s"]),
+                "ser_label": r["ser_label"],
+                "confidence": r["confidence"],
+                "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
+                "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
+                "post_low": float(r["gmm_posteriors"]["low_expr"]),
+                "post_high": float(r["gmm_posteriors"]["high_expr"]),
+                "feature_schema": r["feature_schema"],
+            }
+        } for _, r in df.iterrows()]
 
-        # tidy column order
-        base_cols = ["window_id", "start_s", "end_s", "pitch_sd", "energy_sd", "ser_label", "confidence"]
-        df = df[base_cols + ["gmm_posteriors", "descriptor", "rag_context"]]
+        base_cols = ["window_id","start_s","end_s","pitch_sd","energy_sd","ser_label","confidence","feature_schema"]
+        df = df[base_cols + ["gmm_posteriors","descriptor","rag_context"]]
         return df, docs
+
