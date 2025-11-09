@@ -86,7 +86,7 @@ def infer_ser_descriptors(df_windows):
 # ---- Example usage: per-window SER → descriptors → RAG context
 if __name__ == "__main__":
     # Load your new case/session windows (already computed 60s features)
-    new_df = pd.read_csv("data/daic_prosodic_summary_60s.csv")  # same columns as training features
+    new_df = pd.read_csv("data/yin_prosodic_summary_60s.csv")  # same columns as training features
     results = infer_ser_descriptors(new_df)
 
     # Build compact RAG context strings

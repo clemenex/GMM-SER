@@ -2,7 +2,7 @@ import numpy as np, pandas as pd
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import adjusted_rand_score
-df = pd.read_csv("data/daic_prosodic_summary_60s.csv")
+df = pd.read_csv("data/yin_prosodic_summary_60s.csv")
 X = df[["pitch_sd","energy_sd"]].dropna().to_numpy()
 Xz = StandardScaler().fit_transform(X)
 
