@@ -1,4 +1,3 @@
-# ser_tester.py
 import inspect, ser_pipeline
 from ser_pipeline import SERModel
 
@@ -11,6 +10,6 @@ ser = SERModel.load_from_paths(
     meta_path="models/ser60_meta.joblib",
 )
 
-df, docs = ser.process_audio_file("inputs/301_AUDIO.wav", win_sec=60.0, hop_sec=60.0)
+df, docs = ser.process_audio_file("inputs/300_AUDIO.wav", win_sec=60.0, hop_sec=60.0)
 print(df.head(20))
 print("Docs:", len(docs))

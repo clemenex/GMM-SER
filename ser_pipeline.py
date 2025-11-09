@@ -317,12 +317,42 @@ class SERModel:
         X = df[self.art.features].to_numpy()
         Xz = self.art.scaler.transform(X)
         post = self.art.gmm.predict_proba(Xz)
+        row_sum = post.sum(axis=1, keepdims=True)
+        row_sum[row_sum == 0] = 1.0
+        post = post / row_sum
+
+        # Ensure disjoint, cover all comps; auto-repair if not
+        low = sorted(set(self.art.low_list))
+        high = sorted(set(self.art.high_list))
+        overlap = set(low) & set(high)
+        K = post.shape[1]
+        if overlap or (len(low) == 0) or (len(high) == 0) or (len(low)+len(high) != K):
+            means_orig = self.art.scaler.inverse_transform(self.art.gmm.means_)
+            idx_pitch = (self.art.features.index("pitch_sd") 
+                        if "pitch_sd" in self.art.features else 0)
+            order = np.argsort(means_orig[:, idx_pitch])
+            mid = K // 2
+            low, high = order[:mid].tolist(), order[mid:].tolist()
+
+        # Sum disjoint sets
+        p_low  = post[:, low].sum(axis=1)
+        p_high = post[:, high].sum(axis=1)
+
+        # Final sanity: clamp and renormalize pair if numerical jitter
+        tot = p_low + p_high
+        bad = tot > 1.0 + 1e-6
+        if np.any(bad):
+            p_low[bad]  /= tot[bad]
+            p_high[bad] /= tot[bad]
+
+        assert np.all((p_low >= 0) & (p_high >= 0)), "Negative posteriors?"
+        assert np.all(p_low + p_high <= 1.0 + 1e-6), "Low+High > 1—check component sets."
 
         print("features:", self.art.features)
         print("low_list:", self.art.low_list, "high_list:", self.art.high_list)
         print("n_components:", self.art.gmm.n_components)
         print("post[0][:5]:", post[0][:min(5, post.shape[1])], "sum:", post[0].sum())
-        
+
         p_low  = post[:, self.art.low_list].sum(axis=1)
         p_high = post[:, self.art.high_list].sum(axis=1)
 
