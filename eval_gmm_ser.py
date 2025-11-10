@@ -112,7 +112,6 @@ def main():
     p_high = post[:, high_list].sum(axis=1)
     hard = np.argmax(post, axis=1)
 
-    # Unsupervised diagnostics
     try:
         bic = float(gmm.bic(X))
         aic = float(gmm.aic(X))
@@ -143,7 +142,6 @@ def main():
         coverage_rows.append({"t": round(float(t), 4), "coverage": round(coverage, 6)})
     coverage_df = pd.DataFrame(coverage_rows)
 
-    # Supervised (optional)
     supervised_summary = None
     cm_df = None
     sup_by_t = None
@@ -171,7 +169,6 @@ def main():
             cm = confusion_matrix(y, y_pred050, labels=[0,1])
             cm_df = pd.DataFrame(cm, columns=["pred_low","pred_high"], index=["true_low","true_high"])
 
-            # high-confidence subset metrics per t
             rows = []
             for t in ts:
                 conf_mask = (p_high >= t) | (1 - p_high >= t)
@@ -188,12 +185,10 @@ def main():
                 })
             sup_by_t = pd.DataFrame(rows)
 
-    # Build run dir
     run_id = args.run_id or make_run_id()
     run_dir = Path(args.outdir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Environment info
     env = {
         "python": platform.python_version(),
         "numpy": safe_version("numpy"),
@@ -214,7 +209,6 @@ def main():
         "mixing_weights": getattr(gmm, "weights_", np.array([])).tolist(),
     }
 
-    # Write files
     summary = {
         "experimentId": run_id,
         "runDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -256,7 +250,6 @@ def main():
     if sup_by_t is not None:
         sup_by_t.to_csv(run_dir / "supervised_by_threshold.csv", index=False)
 
-    # README
     readme = f"""# {run_id}
 
 **Data:** {args.data}  
@@ -279,7 +272,6 @@ See `coverage_vs_threshold.csv` for coverage across thresholds.
     with open(run_dir / "README.md", "w", encoding="utf-8") as f:
         f.write(readme)
 
-    # Console echo
     print("=== Unsupervised diagnostics ===")
     if bic is not None and aic is not None:
         print(f"BIC: {bic:.2f}  AIC: {aic:.2f}")

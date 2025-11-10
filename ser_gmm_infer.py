@@ -33,7 +33,6 @@ def map_to_descriptor(row, probs):
     pitch_sd = row.get("pitch_sd", np.nan)
     energy_sd = row.get("energy_sd", np.nan)
 
-    # Default
     label = "prosody_ambiguous"
     descriptor = "Prosodic features are inconclusive; consider additional signs/symptoms."
     confidence = "low"
@@ -83,15 +82,11 @@ def infer_ser_descriptors(df_windows):
     ser = pd.DataFrame(out_rows)
     return pd.concat([df_windows.reset_index(drop=True), ser], axis=1)
 
-# ---- Example usage: per-window SER → descriptors → RAG context
 if __name__ == "__main__":
-    # Load your new case/session windows (already computed 60s features)
-    new_df = pd.read_csv("data/daic_prosodic_summary_60s.csv")  # same columns as training features
+    new_df = pd.read_csv("data/daic_prosodic_summary_60s.csv")
     results = infer_ser_descriptors(new_df)
 
-    # Build compact RAG context strings
     def make_rag_context(row):
-        # Short “bridge” sentence to prepend to the RAG query:
         return (
             f"Observed prosody: {row['descriptor']} "
             f"(posterior low_expr={row['gmm_posteriors']['low_expr']:.2f}, "

@@ -1,4 +1,3 @@
-# ser_pipeline.py
 """
 GMM-SER pipeline for RAG (importable module, no CLI).
 
@@ -57,17 +56,16 @@ def _pitch_energy_legacy(window_y: np.ndarray, sr: int) -> tuple[float, float]:
     - keep bins where magnitude > global median magnitude
     - pitch_sd in Hz (std), energy_sd from RMS over all frames
     """
-    # piptrack returns [freq_bins x frames]
     pitches, mags = librosa.piptrack(y=window_y, sr=sr)
-    mask = mags > np.median(mags)                 # global median threshold, as in the old code
-    pitch_vals = pitches[mask]                    # 1D array of Hz values
+    mask = mags > np.median(mags)
+    pitch_vals = pitches[mask]
 
     if pitch_vals.size > 0:
         pitch_sd_hz = float(np.std(pitch_vals))
     else:
         pitch_sd_hz = float("nan")
 
-    rms = librosa.feature.rms(y=window_y)[0]      # no silence filtering in the old code
+    rms = librosa.feature.rms(y=window_y)[0]
     energy_sd = float(np.std(rms)) if rms.size > 0 else float("nan")
     return pitch_sd_hz, energy_sd
 
@@ -77,13 +75,12 @@ def _features_from_array_legacy(y: np.ndarray, sr: int, win_sec: float, hop_sec:
     Segment audio into non-overlapping windows (like the old pipeline) and
     compute pitch_sd (Hz) and energy_sd per window with the legacy method.
     """
-    # old code used non-overlapping contiguous windows, skipping very short tails
     win_len = int(sr * win_sec)
     starts = list(range(0, len(y), win_len))
     rows = []
     for i, s in enumerate(starts):
         e = min(s + win_len, len(y))
-        if (e - s) < 0.5 * win_len:               # same 50% minimum as your old code
+        if (e - s) < 0.5 * win_len:
             continue
         w = y[s:e]
         pitch_sd, energy_sd = _pitch_energy_legacy(w, sr)
@@ -91,8 +88,8 @@ def _features_from_array_legacy(y: np.ndarray, sr: int, win_sec: float, hop_sec:
             "window_id": i,
             "start_s": round(s / sr, 3),
             "end_s": round(e / sr, 3),
-            "pitch_sd": pitch_sd,                 # Hz
-            "energy_sd": energy_sd               # RMS SD
+            "pitch_sd": pitch_sd,
+            "energy_sd": energy_sd
         })
     return pd.DataFrame(rows)
 
@@ -148,7 +145,6 @@ class SERModel:
         T_HIGH = float(os.getenv("SER_THIGH", thr.get("high_expr", t_default)))
 
         schema = meta.get("feature_schema", "legacy_piptrack_hz_sd__rms_sd")
-        # Allow override via env: SER_FEATURE_MODE = legacy|improved
         mode_env = os.getenv("SER_FEATURE_MODE", "").strip().lower()
         feature_mode = (
             mode_env if mode_env in {"legacy","improved"} else
@@ -176,7 +172,6 @@ class SERModel:
     @staticmethod
     def load_audio_mono(path: str, sr: int = 16000) -> Tuple[np.ndarray, int]:
         y, sr = librosa.load(path, sr=sr, mono=True, res_type="soxr_vhq")
-        # DC + gentle peak normalize
         y = y - np.mean(y)
         peak = np.max(np.abs(y)) + 1e-9
         if peak > 1.0:
@@ -205,7 +200,7 @@ class SERModel:
         # RMS energy
         rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length, center=True).flatten()
 
-        # Pitch with pYIN (robust voicing)
+        # Pitch with pYIN
         f0, _, _ = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr,
                                 frame_length=frame_length, hop_length=hop_length, center=True)
         return frame_times.astype(float), f0.astype(float), rms.astype(float)
@@ -307,7 +302,7 @@ class SERModel:
         )
 
 
-    # ----- public API you’ll call -----
+    # ----- public API -----
 
     def process_audio_file(self, audio_path: str, win_sec: float = 60.0, hop_sec: float = 60.0,
                            sr_target: int = 16000, fmin: float = 65.0, fmax: float = 400.0
@@ -328,16 +323,13 @@ class SERModel:
         if mode not in {"legacy","improved"}:
             raise ValueError(f"Unknown feature_mode={mode}")
 
-        # 1) features per window
         if mode == "legacy":
-            # Legacy uses non-overlapping windows; we intentionally ignore hop_sec here.
             df = _features_from_array_legacy(y, sr, win_sec, hop_sec)
             df["feature_schema"] = "legacy_piptrack_hz_sd__rms_sd"
         else:
             df = self._features_from_array(y, sr, win_sec, hop_sec, fmin, fmax)
-            df["feature_schema"] = "pyin_semitone_sd__rms_sd_excl20p"  # or yin_* if that's your extractor
+            df["feature_schema"] = "pyin_semitone_sd__rms_sd_excl20p"
 
-        # 2) align features & get posteriors
         X = df[self.art.features].to_numpy()
         Xz = self.art.scaler.transform(X)
         post = self.art.gmm.predict_proba(Xz)
@@ -345,7 +337,6 @@ class SERModel:
         row_sum[row_sum == 0] = 1.0
         post = post / row_sum
 
-        # Ensure disjoint, cover all comps; auto-repair if not
         low = sorted(set(self.art.low_list))
         high = sorted(set(self.art.high_list))
         overlap = set(low) & set(high)
@@ -358,11 +349,9 @@ class SERModel:
             mid = K // 2
             low, high = order[:mid].tolist(), order[mid:].tolist()
 
-        # Sum disjoint sets
         p_low  = post[:, low].sum(axis=1)
         p_high = post[:, high].sum(axis=1)
 
-        # Final sanity: clamp and renormalize pair if numerical jitter
         tot = p_low + p_high
         bad = tot > 1.0 + 1e-6
         if np.any(bad):
@@ -380,7 +369,6 @@ class SERModel:
         p_low  = post[:, self.art.low_list].sum(axis=1)
         p_high = post[:, self.art.high_list].sum(axis=1)
 
-        # 3) dataset-level energy quantiles for text mapping
         q25_energy = _percentile_safe(df["energy_sd"].to_numpy(), 25.0)
         q75_energy = _percentile_safe(df["energy_sd"].to_numpy(), 75.0)
 
@@ -400,8 +388,6 @@ class SERModel:
         df["retrieval_query"] = df.apply(self._build_retrieval_query_nl, axis=1)
         df["rag_context"]    = df.apply(self._build_rag_text, axis=1)
 
-
-        # 4) RAG docs
         docs = []
         for _, r in df.iterrows():
             docs.append({
