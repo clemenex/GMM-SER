@@ -51,7 +51,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🧪 Data format
+## Data format
 
 The repository expects a window-level CSV like:
 
@@ -65,7 +65,7 @@ If you don’t have labels, all unsupervised diagnostics still work.
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1) Train the GMM (and save artifacts)
 
@@ -226,7 +226,7 @@ Code: Apache-2.0 (see `LICENSE`)
 
 ---
 
-## 📦 Appendix: Commands cheat sheet
+## Appendix: Commands cheat sheet
 
 ```bash
 # Train
