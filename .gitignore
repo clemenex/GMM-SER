@@ -3,5 +3,5 @@ outputs/
 data/
 models/
 __pycache__
-/Rproj.user
+.Rproj.user
 .vscode
