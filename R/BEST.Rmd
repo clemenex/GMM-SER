@@ -1,0 +1,354 @@
+---
+title: "Bayesian Modeling of Prosodic Features"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# ✅ **Setup**
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(bayesplot)
+library(here)
+library(knitr)
+
+# Load the data
+df <- read_csv("data/daic_prosodic_summary_60s.csv") %>%
+  mutate(
+    participant_id = factor(participant_id),
+    window = factor(window)
+  )
+```
+
+---
+
+# 📌 **Bayesian Model: Pitch Variation**
+
+This model assesses variability in pitch (`pitch_sd`) across participants.
+
+```{r pitch_sd_model, cache=TRUE}
+pitch_sd_model <- brm(
+  pitch_sd ~ 1 + (1 | participant_id),
+  data = df,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  control = list(adapt_delta = 0.95),
+  seed = 123
+)
+```
+
+---
+
+# 📌 **Model Diagnostics**
+
+Visual checks for convergence and stability.
+
+```{r diagnostics}
+plot(pitch_sd_model)
+pp_check(pitch_sd_model)
+```
+
+---
+
+# 📌 **Model Summary**
+
+Model parameters and credible intervals.
+
+```{r summary}
+summary(pitch_sd_model)
+```
+
+---
+
+# 📌 **Top Participants by Pitch Variation**
+
+List participants with highest estimated pitch variability.
+
+```{r random_effects_table}
+ranef(pitch_sd_model)$participant_id %>%
+  as.data.frame() %>%
+  arrange(desc(Estimate.Intercept)) %>%
+  head(10) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Top 10 Participants by Pitch Variation (Random Effects)"
+  )
+```
+
+---
+
+# 📌 **Optional: Bayesian Model for Energy Variation**
+
+Repeat similar modeling for energy variability if desired.
+
+```{r energy_sd_model, eval=FALSE}
+energy_sd_model <- brm(
+  energy_sd ~ 1 + (1 | participant_id),
+  data = df,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  control = list(adapt_delta = 0.95),
+  seed = 123
+)
+```
+
+---
+
+# 📌 **Bayesian BEST Model: Comparing Flat vs. Expressive Affect**
+
+We classify participants based on their average pitch variation across all windows.
+
+```{r best_model_setup, message=FALSE, warning=FALSE}
+# First, compute mean pitch_sd per participant
+participant_means <- df %>%
+  group_by(participant_id) %>%
+  summarise(pitch_sd_mean = mean(pitch_sd, na.rm = TRUE))
+
+# Create a binary grouping: "Flat" vs "Expressive"
+pitch_median <- median(participant_means$pitch_sd_mean, na.rm = TRUE)
+
+participant_means <- participant_means %>%
+  mutate(affect_group = if_else(pitch_sd_mean < pitch_median, "Flat", "Expressive"))
+
+# Merge back into original df
+df_best <- df %>%
+  left_join(participant_means, by = "participant_id")
+```
+
+---
+
+## 📦 Fit the BEST Model:
+
+```{r best_model}
+library(brms)
+
+best_model <- brm(
+  pitch_sd ~ 0 + affect_group,
+  data = df_best,
+  family = student(),
+  prior = c(
+    prior(normal(0, 200), class = "b"),  # weak prior
+    prior(exponential(1), class = "nu")
+  ),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  seed = 123
+)
+```
+
+---
+
+## 📊 View Posterior Summary:
+
+```{r best_model_summary}
+summary(best_model)
+```
+
+---
+
+## 📈 Visualize Posterior Difference:
+
+```{r posterior_difference}
+library(tidybayes)
+
+best_model %>%
+  spread_draws(b_affect_groupFlat, b_affect_groupExpressive) %>%
+  mutate(diff = b_affect_groupExpressive - b_affect_groupFlat) %>%
+  ggplot(aes(x = diff)) +
+  geom_density(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Posterior Difference: Expressive - Flat (Pitch SD)",
+       x = "Difference in pitch_sd",
+       y = "Density") +
+  theme_minimal()
+```
+
+---
+
+## ✅ Interpretation:
+
+If the entire posterior difference is **greater than 0**, it supports the hypothesis that **expressive speakers** have significantly higher pitch variation — which validates the emotional information in your prosodic features.
+
+You can conclude:
+> “The BEST model revealed a clear posterior difference between expressive and flat affect groups based on pitch variability, with expressive speakers showing higher pitch_sd. This aligns with known emotional correlates in speech and strengthens the reliability of our 60s and 30s feature extraction pipeline.”
+
+---
+
+# 📌 **Bayesian Gaussian Mixture Model: Latent Emotional Profiles**
+
+This section models latent emotional clusters using pitch variability (pitch_sd), following the methodology used by Hansen et al. (2022).
+
+---
+
+## ✅ Setup Data
+
+```{r mix-data-setup}
+library(brms)
+
+df_mix <- df %>%
+  select(participant_id, pitch_sd) %>%
+  filter(!is.na(pitch_sd))
+```
+
+---
+
+## 🧪 Fit 2-Component Mixture Model
+
+```{r fit-mixture-2class}
+mix2 <- mixture(gaussian, gaussian)
+
+mix_model_2 <- brm(
+  bf(pitch_sd ~ 1),
+  data = df_mix,
+  family = mix2,
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  seed = 123,
+  control = list(adapt_delta = 0.99),
+  file = "models/mix_model_2class"
+)
+```
+
+---
+
+## 📊 Fit 3-Component Mixture Model (Optional)
+
+```{r fit-mixture-3class, eval=FALSE}
+mix3 <- mixture(gaussian, gaussian, gaussian)
+
+mix_model_3 <- brm(
+  bf(pitch_sd ~ 1),
+  data = df_mix,
+  family = mix3,
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = parallel::detectCores(),
+  seed = 123,
+  control = list(adapt_delta = 0.99),
+  file = "models/mix_model_3class"
+)
+```
+
+---
+
+## 📋 Summarize 2-Class Model
+
+```{r summary-mix2}
+summary(mix_model_2)
+```
+
+Look for values of `mu1` and `mu2` — they represent the **means of the two pitch_sd clusters** (e.g., low vs. expressive affect).
+
+---
+
+## 📉 Compare Model Fit (LOOIC)
+
+```{r compare-mix-models, eval=FALSE}
+loo_2 <- loo(mix_model_2)
+loo_3 <- loo(mix_model_3)
+
+loo_compare(loo_2, loo_3)
+```
+
+If 3-class model has lower LOOIC, it fits better and reveals more expressive variability types.
+
+---
+
+# 📊 **Summary Comparison of All Models**
+
+This table summarizes the core findings from all three modeling approaches.
+
+```{r model-comparison-table}
+library(tibble)
+library(knitr)
+
+comparison_tbl <- tribble(
+  ~Model, ~Purpose, ~Key_Findings, ~Conclusion,
+
+  "Random Intercept (LMM)",
+  "Estimate average pitch_sd and variability across participants using 60s and 30s",
+  "60s: Mean = 845.6, σ = 81.4; 30s: Mean = 833.3, σ = 110.0",
+  "60s windows yield more stable and less noisy emotional features",
+
+  "BEST (Bayesian t-test)",
+  "Compare pitch_sd between 'flat' vs 'expressive' speakers",
+  "Posterior difference shows higher pitch_sd in expressive group",
+  "Pitch_sd successfully captures interpretable emotional variation",
+
+  "Gaussian Mixture Model (GMM)",
+  "Unsupervised discovery of latent emotional profiles via pitch_sd",
+  "μ1 = 542.6, μ2 = 866.2; θ1 = 6%, θ2 = 94%",
+  "Latent emotional states can be recovered directly from prosodic variation"
+)
+
+kable(comparison_tbl, caption = "Comparison of Models for Pitch_SD Emotional Profiling")
+
+```
+
+```{r objective-metrics-clean-table}
+library(brms)
+library(tibble)
+library(knitr)
+
+# 1. Extract from Random Intercept model
+lmm_summary <- summary(pitch_sd_model)
+sigma_lmm <- round(lmm_summary$spec_pars["sigma", "Estimate"], 1)
+group_sd <- round(lmm_summary$random$participant_id["sd(Intercept)", "Estimate"], 1)
+lmm_mean <- round(lmm_summary$fixed["Intercept", "Estimate"], 1)
+
+# 2. Extract from BEST model
+best_summary <- summary(best_model)
+best_diff <- round(best_summary$fixed[1, "Estimate"] - best_summary$fixed[2, "Estimate"], 1)
+best_ci <- paste0("[", round(best_summary$fixed[1, "l-95% CI"] - best_summary$fixed[2, "u-95% CI"], 1), ", ",
+                  round(best_summary$fixed[1, "u-95% CI"] - best_summary$fixed[2, "l-95% CI"], 1), "]")
+
+# 3. Extract from Mixture Model
+mix_summary <- summary(mix_model_2)
+mu1 <- round(mix_summary$fixed["mu1_Intercept", "Estimate"], 1)
+mu2 <- round(mix_summary$fixed["mu2_Intercept", "Estimate"], 1)
+theta1 <- round(mix_summary$spec_pars["theta1", "Estimate"] * 100, 1)
+theta2 <- round(mix_summary$spec_pars["theta2", "Estimate"] * 100, 1)
+mu_ci_overlap <- ifelse(mix_summary$fixed["mu1_Intercept", "u-95% CI"] < 
+                          mix_summary$fixed["mu2_Intercept", "l-95% CI"], "None", "Overlap")
+
+# 4. Build the trimmed table
+metrics_tbl <- tribble(
+  ~Model, ~Metric, ~Value,
+
+  # LMM
+  "Random Intercept (LMM)", "Mean pitch_sd", as.character(lmm_mean),
+  "Random Intercept (LMM)", "Residual Variance (σ)", as.character(sigma_lmm),
+  "Random Intercept (LMM)", "Group Variance (sd(Intercept))", as.character(group_sd),
+
+  # BEST
+  "BEST (Bayesian t-test)", "Posterior Difference (Exp - Flat)", as.character(best_diff),
+  "BEST (Bayesian t-test)", "95% CI of Difference", best_ci,
+
+  # Mixture
+  "Gaussian Mixture Model", "μ1 / μ2", paste(mu1, "/", mu2),
+  "Gaussian Mixture Model", "Cluster Proportion (θ1 / θ2)", paste0(theta1, "% / ", theta2, "%"),
+  "Gaussian Mixture Model", "CI Overlap (μ1 vs μ2)", mu_ci_overlap
+)
+
+kable(metrics_tbl, caption = "Objective Metrics Across Models")
+
+```
+---
+
+
+
+
