@@ -6,9 +6,21 @@ Main entry-points you’ll call from your web app:
 - SERModel.process_audio_file(audio_path, win_sec=60.0, hop_sec=60.0, sr_target=16000)
 - SERModel.process_array(y, sr, win_sec=60.0, hop_sec=60.0)
 
-Returns:
-- A pandas DataFrame (one row per window) with features, posteriors, labels, descriptor, and rag_context
-- A list[dict] of RAG documents: {"text": rag_context, "metadata": {...}}
+Returns (default, as_dict=True):
+- A dict with:
+    - "windows": list[dict]   (one dict per window; formerly df.to_dict(orient="records"))
+    - "docs": list[dict]      (RAG-ready documents)
+    - "rag_prompt_text": str  (all retrieval prompts concatenated)
+    - "rag_prompt_path": Optional[str] (where the .txt file was written, if any)
+    - "n_windows": int
+    - "feature_mode": str
+    - "feature_schema": str
+
+If as_dict=False:
+- Returns (df, docs) as before, for debugging / analysis.
+
+The RAG prompt (.txt) is written alongside the audio file by default:
+  <audio_basename>_ser_rag_prompt.txt
 
 Dependencies:
   pip install numpy pandas joblib librosa==0.10.2.post1 soundfile
@@ -305,24 +317,64 @@ class SERModel:
     # ----- public API -----
 
     def process_audio_file(self, audio_path: str, win_sec: float = 60.0, hop_sec: float = 60.0,
-                           sr_target: int = 16000, fmin: float = 65.0, fmax: float = 400.0
-                           ) -> Tuple[pd.DataFrame, List[Dict]]:
-        y, sr = self.load_audio_mono(audio_path, sr=sr_target)
-        return self.process_array(y, sr, win_sec=win_sec, hop_sec=hop_sec, fmin=fmin, fmax=fmax)
+                           sr_target: int = 16000, fmin: float = 65.0, fmax: float = 400.0, *,
+                           as_dict: bool = True, rag_txt_path: Optional[str] = None,):
+        """
+        Convenience wrapper: load audio from disk then call process_array.
 
-    def process_array(self, y: np.ndarray, sr: int,
-                      win_sec: float = 60.0, hop_sec: float = 60.0,
-                      fmin: float = 65.0, fmax: float = 400.0,
-                      feature_mode: Optional[str] = None
-                      ) -> Tuple[pd.DataFrame, List[Dict]]:
+        Parameters
+        ----------
+        audio_path : str
+            Path to the audio file.
+        as_dict : bool, default True
+            If True, return a dict; if False, return (df, docs) as before.
+        rag_txt_path : Optional[str]
+            If provided, write RAG prompt text to this path.
+            If None, a default path is derived from audio_path:
+                <basename>_ser_rag_prompt.txt
+        """
+        y, sr = self.load_audio_mono(audio_path, sr=sr_target)
+        audio_id = os.path.splitext(os.path.basename(audio_path))[0]
+        return self.process_array(y, sr, win_sec=win_sec, hop_sec=hop_sec, fmin=fmin, fmax=fmax,
+                                  feature_mode=None, as_dict=as_dict, rag_txt_path=rag_txt_path,
+                                  audio_id=audio_id)
+
+    def process_array(
+        self,
+        y: np.ndarray,
+        sr: int,
+        win_sec: float = 60.0,
+        hop_sec: float = 60.0,
+        fmin: float = 65.0,
+        fmax: float = 400.0,
+        feature_mode: Optional[str] = None,
+        *,
+        as_dict: bool = True,
+        rag_txt_path: Optional[str] = None,
+        audio_id: Optional[str] = None,
+    ):
         """
         Full pipeline on in-memory audio: features → GMM → descriptors → RAG docs.
-        Set feature_mode to override ('legacy'/'improved'); defaults to artifacts' mode.
+
+        Parameters
+        ----------
+        as_dict : bool, default True
+            If True, return a dict with primitive types for easy JSON serialization.
+            If False, return (df, docs) exactly like the original implementation.
+        rag_txt_path : Optional[str]
+            Where to write the combined RAG retrieval prompt (.txt).
+            If None and audio_id is not None, we default to:
+                f"{audio_id}_ser_rag_prompt.txt"
+            If both are None, no file is written.
+        audio_id : Optional[str]
+            An identifier (typically the basename of the audio file) used
+            only to auto-name the RAG .txt file when rag_txt_path is None.
         """
         mode = (feature_mode or self.art.feature_mode).lower()
-        if mode not in {"legacy","improved"}:
+        if mode not in {"legacy", "improved"}:
             raise ValueError(f"Unknown feature_mode={mode}")
 
+        # --- feature extraction ---
         if mode == "legacy":
             df = _features_from_array_legacy(y, sr, win_sec, hop_sec)
             df["feature_schema"] = "legacy_piptrack_hz_sd__rms_sd"
@@ -330,6 +382,7 @@ class SERModel:
             df = self._features_from_array(y, sr, win_sec, hop_sec, fmin, fmax)
             df["feature_schema"] = "pyin_semitone_sd__rms_sd_excl20p"
 
+        # --- GMM posteriors ---
         X = df[self.art.features].to_numpy()
         Xz = self.art.scaler.transform(X)
         post = self.art.gmm.predict_proba(Xz)
@@ -337,77 +390,130 @@ class SERModel:
         row_sum[row_sum == 0] = 1.0
         post = post / row_sum
 
-        low = sorted(set(self.art.low_list))
-        high = sorted(set(self.art.high_list))
-        overlap = set(low) & set(high)
         K = post.shape[1]
-        if overlap or (len(low) == 0) or (len(high) == 0) or (len(low)+len(high) != K):
+
+        # --- low/high component sets ---
+        def _valid_indices(idxs):
+            return sorted({i for i in idxs if isinstance(i, (int, np.integer)) and 0 <= i < K})
+
+        meta_low = _valid_indices(self.art.low_list)
+        meta_high = _valid_indices(self.art.high_list)
+
+        low = meta_low
+        high = meta_high
+        overlap = set(low) & set(high)
+
+        if overlap or (len(low) == 0) or (len(high) == 0) or (len(low) + len(high) != K):
             means_orig = self.art.scaler.inverse_transform(self.art.gmm.means_)
-            idx_pitch = (self.art.features.index("pitch_sd") 
-                        if "pitch_sd" in self.art.features else 0)
+            idx_pitch = self.art.features.index("pitch_sd") if "pitch_sd" in self.art.features else 0
             order = np.argsort(means_orig[:, idx_pitch])
             mid = K // 2
-            low, high = order[:mid].tolist(), order[mid:].tolist()
+            low = order[:mid].tolist()
+            high = order[mid:].tolist()
 
-        p_low  = post[:, low].sum(axis=1)
+        print("features:", self.art.features)
+        print("meta_low_list:", self.art.low_list, "meta_high_list:", self.art.high_list)
+        print("effective_low_list:", low, "effective_high_list:", high)
+        print("n_components:", self.art.gmm.n_components)
+        print("post[0][:5]:", post[0][: min(5, post.shape[1])], "sum:", post[0].sum())
+
+        # --- posterior mass for low/high groups ---
+        p_low = post[:, low].sum(axis=1)
         p_high = post[:, high].sum(axis=1)
 
         tot = p_low + p_high
         bad = tot > 1.0 + 1e-6
         if np.any(bad):
-            p_low[bad]  /= tot[bad]
+            p_low[bad] /= tot[bad]
             p_high[bad] /= tot[bad]
 
         assert np.all((p_low >= 0) & (p_high >= 0)), "Negative posteriors?"
         assert np.all(p_low + p_high <= 1.0 + 1e-6), "Low+High > 1—check component sets."
 
-        print("features:", self.art.features)
-        print("low_list:", self.art.low_list, "high_list:", self.art.high_list)
-        print("n_components:", self.art.gmm.n_components)
-        print("post[0][:5]:", post[0][:min(5, post.shape[1])], "sum:", post[0].sum())
-
-        p_low  = post[:, self.art.low_list].sum(axis=1)
-        p_high = post[:, self.art.high_list].sum(axis=1)
-
+        # --- map to labels / descriptors ---
         q25_energy = _percentile_safe(df["energy_sd"].to_numpy(), 25.0)
         q75_energy = _percentile_safe(df["energy_sd"].to_numpy(), 75.0)
 
         mapped = []
         for i, row in df.iterrows():
             info = self._map_descriptor(
-                row=row, p_low=p_low[i], p_high=p_high[i],
-                q25_energy=q25_energy, q75_energy=q75_energy,
-                T_LOW=self.art.T_LOW, T_HIGH=self.art.T_HIGH
+                row=row,
+                p_low=p_low[i],
+                p_high=p_high[i],
+                q25_energy=q25_energy,
+                q75_energy=q75_energy,
+                T_LOW=self.art.T_LOW,
+                T_HIGH=self.art.T_HIGH,
             )
             mapped.append(info)
 
         df["gmm_posteriors"] = [m["gmm_posteriors"] for m in mapped]
-        df["ser_label"]      = [m["ser_label"]      for m in mapped]
-        df["confidence"]     = [m["confidence"]     for m in mapped]
-        df["descriptor"]     = [m["descriptor"]     for m in mapped]
+        df["ser_label"] = [m["ser_label"] for m in mapped]
+        df["confidence"] = [m["confidence"] for m in mapped]
+        df["descriptor"] = [m["descriptor"] for m in mapped]
         df["retrieval_query"] = df.apply(self._build_retrieval_query_nl, axis=1)
-        df["rag_context"]    = df.apply(self._build_rag_text, axis=1)
+        df["rag_context"] = df.apply(self._build_rag_text, axis=1)
 
-        docs = []
+        # --- build RAG docs ---
+        docs: List[Dict] = []
         for _, r in df.iterrows():
-            docs.append({
-                "text": r["retrieval_query"],
-                "gen_text": r["rag_context"],
-                "metadata": {
-                    "window_id": int(r["window_id"]),
-                    "start_s": float(r["start_s"]),
-                    "end_s": float(r["end_s"]),
-                    "ser_label": r["ser_label"],
-                    "confidence": r["confidence"],
-                    "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
-                    "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
-                    "post_low": float(r["gmm_posteriors"]["low_expr"]),
-                    "post_high": float(r["gmm_posteriors"]["high_expr"]),
-                    "feature_schema": r["feature_schema"],
+            docs.append(
+                {
+                    "text": r["retrieval_query"],
+                    "gen_text": r["rag_context"],
+                    "metadata": {
+                        "window_id": int(r["window_id"]),
+                        "start_s": float(r["start_s"]),
+                        "end_s": float(r["end_s"]),
+                        "ser_label": r["ser_label"],
+                        "confidence": r["confidence"],
+                        "pitch_sd": None if pd.isna(r["pitch_sd"]) else float(r["pitch_sd"]),
+                        "energy_sd": None if pd.isna(r["energy_sd"]) else float(r["energy_sd"]),
+                        "post_low": float(r["gmm_posteriors"]["low_expr"]),
+                        "post_high": float(r["gmm_posteriors"]["high_expr"]),
+                        "feature_schema": r["feature_schema"],
+                    },
                 }
-            })
+            )
 
-        base_cols = ["window_id","start_s","end_s","pitch_sd","energy_sd",
-                    "ser_label","confidence","feature_schema"]
-        df = df[base_cols + ["gmm_posteriors","descriptor","retrieval_query","rag_context"]]
-        return df, docs
+        base_cols = [
+            "window_id",
+            "start_s",
+            "end_s",
+            "pitch_sd",
+            "energy_sd",
+            "ser_label",
+            "confidence",
+            "feature_schema",
+        ]
+        df = df[base_cols + ["gmm_posteriors", "descriptor", "retrieval_query", "rag_context"]]
+
+        # ---------- dict output + RAG .txt ----------
+        windows = df.to_dict(orient="records")
+        rag_prompt_text = "\n\n".join(df["retrieval_query"].tolist())
+
+        rag_prompt_path: Optional[str] = None
+        if rag_txt_path is not None:
+            rag_prompt_path = rag_txt_path
+        elif audio_id is not None:
+            rag_prompt_path = f"{audio_id}_ser_rag_prompt.txt"
+
+        if rag_prompt_path is not None:
+            try:
+                with open(rag_prompt_path, "w", encoding="utf-8") as f:
+                    f.write(rag_prompt_text)
+            except Exception as e:
+                print(f"[WARN] Failed to write RAG prompt to {rag_prompt_path}: {e}")
+
+        if not as_dict:
+            return df, docs
+
+        return {
+            "windows": windows,
+            "docs": docs,
+            "rag_prompt_text": rag_prompt_text,
+            "rag_prompt_path": rag_prompt_path,
+            "n_windows": len(windows),
+            "feature_mode": mode,
+            "feature_schema": df["feature_schema"].iloc[0] if len(df) > 0 else self.art.feature_schema,
+        }
